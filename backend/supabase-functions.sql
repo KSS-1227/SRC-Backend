@@ -154,28 +154,22 @@ create index if not exists query_logs_hits_idx on query_logs (hits);
 create index if not exists search_analytics_timestamp_idx on search_analytics (timestamp);
 
 -- ========================================
--- ROW LEVEL SECURITY (Optional but recommended)
+-- ROW LEVEL SECURITY - DISABLED AS REQUESTED
 -- ========================================
 
--- Enable RLS
-alter table content_entries enable row level security;
-alter table query_logs enable row level security;
-alter table search_analytics enable row level security;
+-- Disable RLS for all tables
+alter table content_entries disable row level security;
+alter table query_logs disable row level security;
+alter table search_analytics disable row level security;
 
--- Allow public read access (adjust based on your security requirements)
-create policy "Allow public read access on content_entries" on content_entries
-  for select using (true);
+-- Drop any existing policies
+drop policy if exists "Allow public read access on content_entries" on content_entries;
+drop policy if exists "Allow public insert on content_entries" on content_entries;
+drop policy if exists "Allow public update on content_entries" on content_entries;
+drop policy if exists "Allow public insert on query_logs" on query_logs;
+drop policy if exists "Allow public read access on query_logs" on query_logs;
+drop policy if exists "Allow public access on search_analytics" on search_analytics;
 
-create policy "Allow public insert on query_logs" on query_logs
-  for insert with check (true);
-
-create policy "Allow public read access on query_logs" on query_logs
-  for select using (true);
-
-create policy "Allow public access on search_analytics" on search_analytics
-  for all using (true);
-
--- Grant necessary permissions
-grant usage on schema public to anon, authenticated;
+-- Grant necessary permissions to public
 grant all on all tables in schema public to anon, authenticated;
 grant execute on all functions in schema public to anon, authenticated;

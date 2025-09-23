@@ -15,12 +15,60 @@ class ContentstackService {
     this.validateConfiguration();
 
     // Initialize ContentStack SDK with enhanced configuration
-    this.stack = new Contentstack.Stack({
-      api_key: config.contentstack.apiKey,
-      delivery_token: config.contentstack.deliveryToken,
-      environment: config.contentstack.environment,
-      region: config.contentstack.region || "us", // Default to 'us' if not specified
-    });
+    // Try different initialization patterns to fix the SDK issue
+    try {
+      // Pattern 1: Standard initialization
+      this.stack = Contentstack.Stack({
+        api_key: config.contentstack.apiKey,
+        delivery_token: config.contentstack.deliveryToken,
+        environment: config.contentstack.environment,
+        region: config.contentstack.region || "us",
+      });
+      logger.info("📚 Contentstack client initialized with pattern 1", {
+        environment: config.contentstack.environment,
+        region: config.contentstack.region || "us",
+      });
+    } catch (initError1) {
+      logger.error(
+        "Failed to initialize Contentstack with pattern 1:",
+        initError1
+      );
+      try {
+        // Pattern 2: Try with additional parameters
+        this.stack = Contentstack.Stack({
+          api_key: config.contentstack.apiKey,
+          delivery_token: config.contentstack.deliveryToken,
+          environment: config.contentstack.environment,
+          region: config.contentstack.region || "us",
+          timeout: config.contentstack.timeout || 30000,
+          retryLimit: config.contentstack.retryLimit || 3,
+          retryDelay: config.contentstack.retryDelay || 1000,
+        });
+        logger.info("📚 Contentstack client initialized with pattern 2", {
+          environment: config.contentstack.environment,
+          region: config.contentstack.region || "us",
+        });
+      } catch (initError2) {
+        logger.error(
+          "Failed to initialize Contentstack with pattern 2:",
+          initError2
+        );
+        // Fallback to basic initialization
+        this.stack = Contentstack.Stack({
+          api_key: config.contentstack.apiKey,
+          delivery_token: config.contentstack.deliveryToken,
+          environment: config.contentstack.environment,
+          region: config.contentstack.region || "us",
+        });
+        logger.info(
+          "📚 Contentstack client initialized with fallback pattern",
+          {
+            environment: config.contentstack.environment,
+            region: config.contentstack.region || "us",
+          }
+        );
+      }
+    }
 
     // Set additional SDK options if available
     if (config.contentstack.host) {
@@ -162,17 +210,29 @@ class ContentstackService {
               );
 
               // Use the correct SDK pattern for fetching entries
-              const query = this.stack
-                .ContentType(contentType)
-                .Query();
-              
+              logger.debug(
+                "Creating query object for content type:",
+                contentType
+              );
+              const contentTypeObj = this.stack.ContentType(contentType);
+              logger.debug(
+                "ContentType object created:",
+                typeof contentTypeObj
+              );
+              logger.debug("Query method exists:", typeof contentTypeObj.Query);
+
+              const query = contentTypeObj.Query();
+              logger.debug("Query object created successfully");
+
               // Set query parameters
               query.language(locale);
               query.limit(limit);
               query.skip(skip);
               query.includeCount();
+              query.toJSON(); // Add this line to match fetchBlogPosts
 
               const result = await query.find();
+              logger.debug("Query executed successfully");
 
               // Handle different response formats from the SDK
               let entries = [];
@@ -263,13 +323,12 @@ class ContentstackService {
                 }
               );
 
-              const query = this.stack
-                .ContentType(contentType)
-                .Query();
-              
+              const query = this.stack.ContentType(contentType).Query();
+
               query.language(locale);
               query.where("uid", { $in: ids });
               query.includeCount();
+              query.toJSON(); // Add this line for consistency
 
               const result = await query.find();
 
@@ -343,10 +402,8 @@ class ContentstackService {
                 limit,
               });
 
-              const query = this.stack
-                .ContentType("blog_post")
-                .Query();
-              
+              const query = this.stack.ContentType("blog_post").Query();
+
               query.language(locale);
               query.limit(limit);
               query.includeCount();
@@ -587,35 +644,35 @@ class ContentstackService {
   }
 
   /**
-   * Transform Contentstack entry to standard format using content type manager
+   * Transform entry to standard format for search indexing
    */
-  transformEntry(entry, contentType, locale) {
-    // Extract basic fields using content type manager
-    const uid = entry.uid;
-    const title = contentTypeManager.extractTitle(entry, contentType);
-    const snippet = contentTypeManager.extractSnippet(entry, contentType);
-    const url = contentTypeManager.generateUrl(entry, contentType);
-    const updatedAt =
-      entry.updated_at ||
-      entry._metadata?.updated_at ||
-      new Date().toISOString();
+  transformEntry(entry, contentTypeUid, locale) {
+    // Extract content using contentTypeManager
+    const title = contentTypeManager.extractTitle(entry, contentTypeUid);
+    const snippet = contentTypeManager.extractSnippet(entry, contentTypeUid);
+    const tags = contentTypeManager.extractTags(entry, contentTypeUid);
+    const category = contentTypeManager.extractCategory(entry, contentTypeUid);
+    const url = contentTypeManager.generateUrl(entry, contentTypeUid);
 
-    // Extract additional fields using content type manager
-    const tags = contentTypeManager.extractTags(entry, contentType);
-    const category = contentTypeManager.extractCategory(entry, contentType);
+    // Generate embedding text
+    const embeddingText = contentTypeManager.generateEmbeddingText(
+      entry,
+      contentTypeUid
+    );
 
     return {
-      id: `${contentType}_${uid}_${locale}`,
-      uid,
+      id: entry.uid,
+      content_type: contentTypeUid,
       title,
       snippet,
-      url,
-      content_type: contentType,
-      locale,
-      updated_at: updatedAt,
+      content: embeddingText,
       tags,
       category,
-      raw_data: entry, // Keep original data for reference
+      url,
+      locale,
+      published_at: entry.publish_details?.time || entry.created_at,
+      updated_at: entry.updated_at,
+      raw_data: entry, // Keep raw data for reference
     };
   }
 
